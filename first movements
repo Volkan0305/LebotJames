@@ -1,0 +1,108 @@
+% Initialize the LinearUR5 class with correct base transformation
+ur5BaseTr = transl(0, 0, 0); % Base position at origin
+ur5Robot = LinearUR5(ur5BaseTr); % Create instance of LinearUR5 with correct base
+
+% Check and ensure only the correct robot is being plotted
+% Clear any previously opened figure
+close all;
+
+% Set up the environment and floor texture
+[X, Y] = meshgrid(-2:0.1:2, -2:0.1:2); % Create a grid that covers the floor space
+Z = zeros(size(X)); % Set the Z coordinates to zero for a flat floor
+floorTexture = imread('concrete.jpg'); % Load the concrete texture image
+
+% Create a figure and hold it for the entire process
+figureHandle = figure; % Explicitly assign a figure handle
+hold on; % Hold the figure so that it doesn't get overwritten
+
+% Plot the floor with the concrete texture in the same figure
+surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'none'); % Apply the texture and remove the mesh
+axis([-2 2 -2 2 0 2]); % Set axis limits [xmin xmax ymin ymax zmin zmax]
+view(3); % Set to a 3D view
+
+% Now, ensure only the correct robot is being plotted
+ur5Robot.PlotAndColourRobot();
+
+% Set initial joint angles to have the arm laid down (joint angles in radians)
+initialAngles = [0, -pi/2, pi/2, 0, 0, pi/2, 0]; % Include prismatic joint (1st value) and 6 revolute joints
+
+% Set final joint angles for upright position
+finalAngles = [0, -pi/2, pi/9, 0, 0, pi/2, 0]; % Include prismatic joint (1st value) and 6 revolute joints
+
+% Number of steps for the trajectory
+steps = 50;
+
+% Generate trajectory between initial and final angles
+qMatrix = jtraj(initialAngles, finalAngles, steps);
+
+% Animate the robot's movement from laid-down to upright position
+for i = 1:steps
+    ur5Robot.model.animate(qMatrix(i, :)); % Use animate to update robot's configuration
+    pause(0.1); % Slow down the animation
+end
+
+% After the robot stops, simulate the ball trajectory
+% Initial parameters for ball launch
+x0 = ur5Robot.model.fkine(finalAngles).t(1); % Initial X position of the ball (end-effector X position)
+y0 = ur5Robot.model.fkine(finalAngles).t(2); % Initial Y position of the ball (end-effector Y position)
+z0 = ur5Robot.model.fkine(finalAngles).t(3); % Initial Z position of the ball (end-effector Z position)
+
+v0 = 5; % Initial velocity (m/s)
+theta = pi;  % Horizontal launch angle (180 degrees for opposite direction)
+phi = pi/4; % Vertical launch angle (45 degrees for a typical throw)
+g = 9.81; % Gravity (m/s^2)
+
+% Time parameters
+t_end = 2; % Time until the ball hits the ground (approximate)
+timeSteps = linspace(0, t_end, 100); % 100 time steps
+
+% Preallocate arrays for storing the trajectory
+x_traj = zeros(size(timeSteps));
+y_traj = zeros(size(timeSteps)); % y_traj will remain constant if theta = pi
+z_traj = zeros(size(timeSteps));
+
+% Read the STL file and define scaling factor
+fv = stlread('BasketTopu.stl'); 
+scaling_factor = 0.001; % Scaling down the basketball geometry
+scaled_vertices = fv.Points * scaling_factor; % Scale the vertices
+
+% Initialize patch object for the STL ball
+hBall = patch('Faces', fv.ConnectivityList, 'Vertices', scaled_vertices, ...
+      'FaceColor', [0.8 0.8 1.0], 'EdgeColor', 'none'); % Patch object for basketball
+      
+% Set initial position of the ball to be at the end-effector
+ballPosition = transl(x0, y0, z0);
+
+% Loop to calculate and update the ball's trajectory
+for i = 1:length(timeSteps)
+    t = timeSteps(i);
+    x_traj(i) = x0 + v0 * t * cos(theta) * cos(phi); % Moves along negative X-axis with theta = pi
+    y_traj(i) = y0; % Constant since theta = pi, no movement along Y-axis
+    z_traj(i) = z0 + v0 * t * sin(phi) - 0.5 * g * t^2; % Z-axis movement with gravity
+    
+    % Stop if the ball hits the ground
+    if z_traj(i) < 0
+        x_traj = x_traj(1:i);
+        y_traj = y_traj(1:i);
+        z_traj = z_traj(1:i);
+        break;
+    end
+    
+    % Update the basketball's position based on the calculated trajectory
+    ballPosition = transl(x_traj(i), y_traj(i), z_traj(i)); % Update the transformation matrix
+    new_vertices = (ballPosition(1:3, 1:3) * scaled_vertices')' + ballPosition(1:3, 4)'; % Apply translation and rotation
+    set(hBall, 'Vertices', new_vertices); % Update ball position in the plot
+    
+    pause(0.01); % Slow down the animation for better visualization
+end
+
+% Plot the final trajectory of the ball
+plot3(x_traj, y_traj, z_traj, 'r-', 'LineWidth', 2); % Plot in 3D space
+xlabel('X');
+ylabel('Y');
+zlabel('Z');
+title('Ball Trajectory with STL Object');
+grid on;
+
+% Ensure figure remains open after the animation
+hold off;
