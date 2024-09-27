@@ -1,0 +1,109 @@
+%% Adjustments to be made to the parameters
+
+classdef KUKA < RobotBaseClass
+    %% KUKA LBR iiwa 7 R800 Robot Model
+
+    properties(Access = public)
+        plyFileNameStem = 'KUKA';
+    end
+    
+    methods
+        %% Constructor
+        function self = KUKA(baseTr)
+            self.CreateModel();  % Create the KUKA robot model
+            
+            if nargin < 1
+                baseTr = eye(4);  % Default to identity matrix if no baseTr provided
+            end
+            
+            % Ensure the base transformation matrix is 4x4
+            assert(all(size(baseTr) == [4, 4]), 'baseTr must be a 4x4 matrix');
+            
+            % Initialize the model base and apply the transformation
+            if isempty(self.model) || ~isfield(self.model, 'base')
+                self.model.base = eye(4);
+            end
+            
+            % Apply the base transformation and some rotations
+            if all(size(self.model.base) == [4, 4])
+                self.model.base = self.model.base * baseTr * trotx(pi/2) * troty(pi/2);
+            else
+                warning('self.model.base is not a valid 4x4 matrix, initializing as identity matrix.');
+                self.model.base = eye(4);  % Reinitialize if invalid
+            end
+            
+            % Call method to plot and color the robot with .ply files, scaled to 0.01
+            self.PlotAndColourRobot(0.01);  % Scale factor of 0.01 (1%)
+        end
+
+        %% Create the robot model
+        function CreateModel(self)
+            % Create the KUKA 7-link model with correct DH parameters for LBR iiwa 7 R800
+            link(1) = Link([0     0.34   0       -pi/2    0]);  % Joint 1
+            link(2) = Link([0     0       0       pi/2     0]);  % Joint 2
+            link(3) = Link([0     0.4     0       -pi/2    0]);  % Joint 3
+            link(4) = Link([0     0       0       pi/2     0]);  % Joint 4
+            link(5) = Link([0     0.39    0       -pi/2    0]);  % Joint 5
+            link(6) = Link([0     0       0       pi/2     0]);  % Joint 6
+            link(7) = Link([0     0.126   0       0        0]);  % Joint 7
+
+            % Set joint limits typical for KUKA LBR iiwa 7 R800
+            link(1).qlim = deg2rad([-170, 170]);
+            link(2).qlim = deg2rad([-120, 120]);
+            link(3).qlim = deg2rad([-170, 170]);
+            link(4).qlim = deg2rad([-120, 120]);
+            link(5).qlim = deg2rad([-170, 170]);
+            link(6).qlim = deg2rad([-120, 120]);
+            link(7).qlim = deg2rad([-175, 175]);
+
+            % Create a serial link object for the KUKA robot
+            self.model = SerialLink(link, 'name', 'KUKA LBR iiwa 7 R800');
+        end
+
+        %% Plot and color robot (associate .ply files with links)
+        function PlotAndColourRobot(self, scaleFactor)
+            % If no scale factor is provided, use a default value of 0.01 (1% of the original size)
+            if nargin < 2
+                scaleFactor = 0.01;  % Default scaling factor
+            end
+
+            % Debugging output: Confirm the scale factor
+            disp(['Using scale factor: ', num2str(scaleFactor)]);
+
+            for linkIndex = 1:7  % Adjusted for 7 links
+                % Load the .ply file corresponding to each link
+                try
+                    [faceData, vertexData, plyData{linkIndex}] = plyread(['kukaLink', num2str(linkIndex), '.ply'], 'tri');
+                catch
+                    error(['Error loading .ply file for link ', num2str(linkIndex)]);
+                end
+                
+                % Debugging: Output the number of vertices
+                disp(['Loaded kukaLink', num2str(linkIndex), '.ply with ', num2str(size(vertexData, 1)), ' vertices.']);
+                
+                % Scale the vertex data down by the scale factor
+                vertexData = vertexData * scaleFactor;
+                
+                % Attach the scaled 3D data to the robot model
+                self.model.faces{linkIndex + 1} = faceData;
+                self.model.points{linkIndex + 1} = vertexData;
+
+                % Debugging: Plot vertices individually for inspection
+                plot3(vertexData(:,1), vertexData(:,2), vertexData(:,3), 'r.');
+                hold on;
+            end
+
+            % Adjust the workspace to fit the scaled model
+            workspaceDimensions = [-1 1 -1 1 0 1];
+            
+            % Plot the robot in 3D with the scaled model and adjusted workspace
+            self.model.plot3d(zeros(1, self.model.n), 'noarrow', 'workspace', workspaceDimensions);
+            
+            % Add lighting if it's not already present
+            if isempty(findobj(get(gca, 'Children'), 'Type', 'Light'))
+                camlight;
+            end
+            self.model.delay = 0;
+        end
+    end
+end
