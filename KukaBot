@@ -1,7 +1,5 @@
-%% Adjustments to be made to the parameters
-
 classdef KUKA < RobotBaseClass
-    %% KUKA LBR iiwa 7 R800 Robot Model
+    %% KUKA LBR iiwa 7 R800 Robot Model with 8th Link
 
     properties(Access = public)
         plyFileNameStem = 'KUKA';
@@ -24,9 +22,9 @@ classdef KUKA < RobotBaseClass
                 self.model.base = eye(4);
             end
             
-            % Apply the base transformation and some rotations
+            % Apply the base transformation (without additional rotation for now)
             if all(size(self.model.base) == [4, 4])
-                self.model.base = self.model.base * baseTr * trotx(pi/2) * troty(pi/2);
+                self.model.base = self.model.base * baseTr;
             else
                 warning('self.model.base is not a valid 4x4 matrix, initializing as identity matrix.');
                 self.model.base = eye(4);  % Reinitialize if invalid
@@ -36,16 +34,18 @@ classdef KUKA < RobotBaseClass
             self.PlotAndColourRobot(0.01);  % Scale factor of 0.01 (1%)
         end
 
+
         %% Create the robot model
         function CreateModel(self)
-            % Create the KUKA 7-link model with correct DH parameters for LBR iiwa 7 R800
-            link(1) = Link([0     0.34   0       -pi/2    0]);  % Joint 1
-            link(2) = Link([0     0       0       pi/2     0]);  % Joint 2
-            link(3) = Link([0     0.4     0       -pi/2    0]);  % Joint 3
-            link(4) = Link([0     0       0       pi/2     0]);  % Joint 4
-            link(5) = Link([0     0.39    0       -pi/2    0]);  % Joint 5
-            link(6) = Link([0     0       0       pi/2     0]);  % Joint 6
-            link(7) = Link([0     0.126   0       0        0]);  % Joint 7
+            % Adjust DH parameters to reduce spacing between links
+            link(1) = Link([0     0   0        0        0]);  % Reduced link length
+            link(2) = Link([0     0    0        0        0]);  % Reduced link length
+            link(3) = Link([0     0    0        0        0]);  % Reduced link length
+            link(4) = Link([0     0    0        0        pi/2]);  % Rotate the fourth joint by 90 degrees (pi/2) using alpha (rotation around x-axis)
+            link(5) = Link([0     0    0       -pi/2    0]);  % Adjusted based on physical model
+            link(6) = Link([0     0    0       pi/2     0]);  % Adjusted based on physical model
+            link(7) = Link([0     0   0       0        0]);  % Reduced for compactness
+            link(8) = Link([0     0   0       0        0]);  % New 8th link, revolute joint
 
             % Set joint limits typical for KUKA LBR iiwa 7 R800
             link(1).qlim = deg2rad([-170, 170]);
@@ -55,10 +55,13 @@ classdef KUKA < RobotBaseClass
             link(5).qlim = deg2rad([-170, 170]);
             link(6).qlim = deg2rad([-120, 120]);
             link(7).qlim = deg2rad([-175, 175]);
+            link(8).qlim = deg2rad([-180, 180]);  % Set limits for the new joint
 
             % Create a serial link object for the KUKA robot
-            self.model = SerialLink(link, 'name', 'KUKA LBR iiwa 7 R800');
+            self.model = SerialLink(link, 'name', 'KUKA LBR iiwa 7 R800 with 8th link');
         end
+
+
 
         %% Plot and color robot (associate .ply files with links)
         function PlotAndColourRobot(self, scaleFactor)
@@ -70,7 +73,7 @@ classdef KUKA < RobotBaseClass
             % Debugging output: Confirm the scale factor
             disp(['Using scale factor: ', num2str(scaleFactor)]);
 
-            for linkIndex = 1:7  % Adjusted for 7 links
+            for linkIndex = 1:8  % Adjusted for 8 links
                 % Load the .ply file corresponding to each link
                 try
                     [faceData, vertexData, plyData{linkIndex}] = plyread(['kukaLink', num2str(linkIndex), '.ply'], 'tri');
@@ -84,21 +87,25 @@ classdef KUKA < RobotBaseClass
                 % Scale the vertex data down by the scale factor
                 vertexData = vertexData * scaleFactor;
                 
-                % Attach the scaled 3D data to the robot model
+                % Explicitly rotate link 5 by 90 degrees around the x-axis
+                if linkIndex == 5
+                    disp('Rotating link 5 vertices by 90 degrees around x-axis');
+                    rotationMatrix = makehgtform('xrotate', pi/2);  % 90 degrees around x-axis
+                    vertexData = (rotationMatrix(1:3, 1:3) * vertexData')';  % Apply the rotation
+                end
+                
+                % Attach the scaled (and rotated) 3D data to the robot model
                 self.model.faces{linkIndex + 1} = faceData;
                 self.model.points{linkIndex + 1} = vertexData;
-
-                % Debugging: Plot vertices individually for inspection
-                plot3(vertexData(:,1), vertexData(:,2), vertexData(:,3), 'r.');
-                hold on;
             end
 
             % Adjust the workspace to fit the scaled model
-            workspaceDimensions = [-1 1 -1 1 0 1];
-            
+            workspaceDimensions = [-5 5 -5 5 0 5];  % Increased Z-axis limit to fit better
+
             % Plot the robot in 3D with the scaled model and adjusted workspace
             self.model.plot3d(zeros(1, self.model.n), 'noarrow', 'workspace', workspaceDimensions);
-            
+            drawnow;  % Force the plot to update
+
             % Add lighting if it's not already present
             if isempty(findobj(get(gca, 'Children'), 'Type', 'Light'))
                 camlight;
