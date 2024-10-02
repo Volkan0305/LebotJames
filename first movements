@@ -1,60 +1,61 @@
-% Initialize the LinearUR5 class with correct base transformation
-ur5BaseTr = transl(0, 0, 0); % Base position at origin
-ur5Robot = LinearUR5(ur5BaseTr); % Create instance of LinearUR5 with correct base
+% Initialize the LinearUR5 robot at the origin
+ur5BaseTr = transl(0, 0, 0); % LinearUR5 placed at the origin
+ur5Robot = LinearUR5(ur5BaseTr); % Create instance of LinearUR5
 
-% Check and ensure only the correct robot is being plotted
-% Clear any previously opened figure
-close all;
+% Initialize the KUKA robot at a different starting position (e.g., x = 1, y = 1, z = 0)
+kukaBaseTr = transl(1, 1, 0); % Place the KUKA robot at (x, y, z) = (1, 1, 0)
+kukaRobot = KUKA(kukaBaseTr); % Create instance of KUKA with the new base position
 
-% Set up the environment and floor texture
-[X, Y] = meshgrid(-2:0.1:2, -2:0.1:2); % Create a grid that covers the floor space
-Z = zeros(size(X)); % Set the Z coordinates to zero for a flat floor
-floorTexture = imread('concrete.jpg'); % Load the concrete texture image
+% Plot the environment and robots
+figureHandle = figure;
+hold on;
 
-% Create a figure and hold it for the entire process
-figureHandle = figure; % Explicitly assign a figure handle
-hold on; % Hold the figure so that it doesn't get overwritten
+% Create the floor and set texture as before
+[X, Y] = meshgrid(-2:0.1:2, -2:0.1:2); % Create grid for the floor
+Z = zeros(size(X)); % Flat floor
+floorTexture = imread('concrete.jpg'); % Load floor texture
+surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'none'); % Apply texture
+axis([-2 3 -2 2 0 2]); % Adjust axis to include both robots
+view(3);
 
-% Plot the floor with the concrete texture in the same figure
-surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'none'); % Apply the texture and remove the mesh
-axis([-2 2 -2 2 0 2]); % Set axis limits [xmin xmax ymin ymax zmin zmax]
-view(3); % Set to a 3D view
-
-% Now, ensure only the correct robot is being plotted
+% Plot the LinearUR5 robot
 ur5Robot.PlotAndColourRobot();
 
-% Set initial joint angles to have the arm laid down (joint angles in radians)
+% Plot the KUKA robot (scaled to 0.009 to reduce size slightly)
+kukaRobot.PlotAndColourRobot(0.006);
+
+% Set initial joint angles to have the UR5 arm laid down (joint angles in radians)
 initialAngles = [0, -pi/2, pi/2, 0, 0, pi/2, 0]; % Include prismatic joint (1st value) and 6 revolute joints
 
-% Set final joint angles for upright position
+% Set final joint angles for UR5 to upright position
 finalAngles = [0, -pi/2, pi/9, 0, 0, pi/2, 0]; % Include prismatic joint (1st value) and 6 revolute joints
 
 % Number of steps for the trajectory
-steps = 50;
+steps = 100;
 
 % Generate trajectory between initial and final angles
 qMatrix = jtraj(initialAngles, finalAngles, steps);
 
-% Animate the robot's movement from laid-down to upright position
+% Animate the UR5 robot's movement from laid-down to upright position
 for i = 1:steps
-    ur5Robot.model.animate(qMatrix(i, :)); % Use animate to update robot's configuration
+    ur5Robot.model.animate(qMatrix(i, :)); % Use animate to update UR5 robot's configuration
     pause(0.1); % Slow down the animation
 end
 
-% After the robot stops, simulate the ball trajectory
+% After the UR5 robot stops, simulate the ball trajectory
 % Initial parameters for ball launch
 x0 = ur5Robot.model.fkine(finalAngles).t(1); % Initial X position of the ball (end-effector X position)
 y0 = ur5Robot.model.fkine(finalAngles).t(2); % Initial Y position of the ball (end-effector Y position)
 z0 = ur5Robot.model.fkine(finalAngles).t(3); % Initial Z position of the ball (end-effector Z position)
 
-v0 = 5; % Initial velocity (m/s)
+v0 = 20; % Initial velocity (m/s)
 theta = pi;  % Horizontal launch angle (180 degrees for opposite direction)
 phi = pi/4; % Vertical launch angle (45 degrees for a typical throw)
 g = 9.81; % Gravity (m/s^2)
 
 % Time parameters
 t_end = 2; % Time until the ball hits the ground (approximate)
-timeSteps = linspace(0, t_end, 100); % 100 time steps
+timeSteps = linspace(0, t_end, 200); % Increase number of time steps for smoother animation
 
 % Preallocate arrays for storing the trajectory
 x_traj = zeros(size(timeSteps));
@@ -69,7 +70,7 @@ scaled_vertices = fv.Points * scaling_factor; % Scale the vertices
 % Initialize patch object for the STL ball
 hBall = patch('Faces', fv.ConnectivityList, 'Vertices', scaled_vertices, ...
       'FaceColor', [0.8 0.8 1.0], 'EdgeColor', 'none'); % Patch object for basketball
-      
+     
 % Set initial position of the ball to be at the end-effector
 ballPosition = transl(x0, y0, z0);
 
@@ -93,7 +94,7 @@ for i = 1:length(timeSteps)
     new_vertices = (ballPosition(1:3, 1:3) * scaled_vertices')' + ballPosition(1:3, 4)'; % Apply translation and rotation
     set(hBall, 'Vertices', new_vertices); % Update ball position in the plot
     
-    pause(0.01); % Slow down the animation for better visualization
+    pause(0.005); % Smaller pause for quicker and smoother movement
 end
 
 % Plot the final trajectory of the ball
