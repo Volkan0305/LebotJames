@@ -1,0 +1,87 @@
+classdef LinearUR5 < RobotBaseClass
+    %% LinearUR5 UR5 on a non-standard linear rail created by a student
+    %LINEAR UR3e PARTS PLACED REPLACED WITHIN THE ROBOT
+    %GRIPPER ALSO ADDED
+
+    properties(Access = public)              
+        plyFileNameStem = 'LinearUR5';
+    end
+    
+    methods
+        %% Define robot Function 
+        function self = LinearUR5(baseTr)
+            self.CreateModel();
+            if nargin < 1            
+                baseTr = eye(4);                
+            end
+            self.model.base = self.model.base.T * baseTr * trotx(pi/2) * troty(pi/2);
+            
+            self.PlotAndColourRobot();         
+        end
+
+        %% Create the robot model
+        function CreateModel(self)   
+            % Create the UR5 model mounted on a linear rail
+            link(1) = Link([pi     0       0       pi/2    1]); % PRISMATIC Link
+            link(2) = Link('d',0.15185,'a',0,'alpha',pi/2,'qlim',deg2rad([-360 360]), 'offset',0);
+            link(3) = Link('d',0,'a',-0.24355,'alpha',0,'qlim', deg2rad([-360 360]), 'offset',0);
+            link(4) = Link('d',0,'a',-0.2132,'alpha',0,'qlim', deg2rad([-360 360]), 'offset', 0);
+            link(5) = Link('d',0.13105,'a',0,'alpha',pi/2,'qlim',deg2rad([-360 360]),'offset', 0);
+            link(6) = Link('d',0.08535,'a',0,'alpha',-pi/2,'qlim',deg2rad([-360,360]), 'offset',0);
+            link(7) = Link('d', 0.0921,'a',0,'alpha',0,'qlim',deg2rad([-360,360]), 'offset', 0);
+
+            % For the claw/gripper
+            link(8) = Link('d', 0.16,'a',0,'alpha',pi,'qlim',deg2rad([-360,360]), 'offset', 0); % Rotate Link 8 by 180 degrees around X-axis
+            
+            % Incorporate joint limits
+            link(1).qlim = [0 0.8];
+            link(2).qlim = [-360 360]*pi/180;
+            link(3).qlim = [-90 90]*pi/180;
+            link(4).qlim = [-170 170]*pi/180;
+            link(5).qlim = [-360 360]*pi/180;
+            link(6).qlim = [-360 360]*pi/180;
+            link(7).qlim = [-360 360]*pi/180;
+            link(8).qlim = [-360 360]*pi/180;
+
+            link(3).offset = -pi/2;
+            link(5).offset = -pi/2;
+            
+            self.model = SerialLink(link,'name',self.name);
+        end
+
+        %% Plot and color the robot (only scale Link 8)
+        function PlotAndColourRobot(self)
+            for linkIndex = 1:self.model.n
+                if linkIndex == 8
+                    % Only Link 8 needs to be scaled down to 0.005
+                    plyFileName = 'LinearUR5Link8.ply';
+                    scaleFactor = 0.0008; % Apply scaling only to Link 8
+                else
+                    % Use default for other links
+                    plyFileName = [self.plyFileNameStem, 'Link', num2str(linkIndex), '.ply'];
+                    scaleFactor = 1; % No scaling for other links
+                end
+
+                % Check if file exists before loading
+                if exist(plyFileName, 'file') == 2
+                    [faceData, vertexData, plyData] = plyread(plyFileName, 'tri');
+                    
+                    % Apply scaling if needed
+                    vertexData = vertexData * scaleFactor;
+                    
+                    self.model.faces{linkIndex+1} = faceData;
+                    self.model.points{linkIndex+1} = vertexData;
+                else
+                    warning(['PLY file not found: ', plyFileName]);
+                end
+            end
+
+            % Plot the robot with adjusted workspace and lighting
+            self.model.plot3d(zeros(1,self.model.n),'noarrow','workspace',[-2 2 -2 2 -0.3 2]);
+            if isempty(findobj(get(gca,'Children'),'Type','Light'))
+                camlight
+            end  
+            self.model.delay = 0;
+        end
+    end 
+end
