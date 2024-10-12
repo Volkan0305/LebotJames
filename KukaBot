@@ -28,81 +28,77 @@ classdef KUKA < RobotBaseClass
         %% Create the robot model
         %% Create the robot model
 function CreateModel(self)
-    % Define DH parameters for the KUKA LBR iiwa 7 R800 with proper offsets for each link
-    link(1) = Link([0     0.0001   0        0    0]);   % Link 1: Vertical offset (d) of 0.34m
-    link(2) = Link([0     0      0        0   0]);   % Link 2: Revolute joint, no offset
-    link(3) = Link([0     0    0        0    0]);   % Link 3: Vertical offset of 0.4m
-    link(4) = Link([0     0      0        0   0]);   % Link 4: Revolute joint
-    link(5) = Link([0     0    0        -pi/2    0]);   % Link 5: Vertical offset of 0.4m
-    link(6) = Link([0     0      0        pi/2   0]);   % Link 6: Revolute joint
-    link(7) = Link([0     0  0        0    0]);   % Link 7: Vertical offset of 0.126m
-    link(8) = Link([0     1.23      0        0       0]);   % Link 8: End effector (no offset, just rotation)
-    
-    % Set joint limits typical for KUKA LBR iiwa 7 R800
-    link(1).qlim = deg2rad([-170, 170]);
-    link(2).qlim = deg2rad([-120, 120]);
-    link(3).qlim = deg2rad([-170, 170]);
-    link(4).qlim = deg2rad([-120, 120]);
-    link(5).qlim = deg2rad([-170, 170]);
-    link(6).qlim = deg2rad([-120, 120]);
-    link(7).qlim = deg2rad([-175, 175]);
-    link(8).qlim = deg2rad([-180, 180]);  % Set limits for the new joint
-    
+            link(1) = Link('d', 0, 'a', 0, 'alpha', 0, 'qlim', deg2rad([-180, 180]));
+            
+            % Joint 2 to 7: Revolute joints, adjust qlim to allow significant movement
+            link(2) = Link('d', 0, 'a', 0, 'alpha', 0, 'qlim', deg2rad([-360 360]));
+            link(3) = Link('d', 0, 'a', 0, 'alpha', 0, 'qlim', deg2rad([-360 360]));
+            link(4) = Link('d', 0, 'a', 0, 'alpha', 0, 'qlim', deg2rad([-360 360]));
+            link(5) = Link('d', 0, 'a', 0, 'alpha', 0, 'qlim', deg2rad([-360 360]));
+            link(6) = Link('d', 0, 'a', 0, 'alpha', 0, 'qlim', deg2rad([-360 360]));
+            link(7) = Link('d', 0, 'a', 0, 'alpha', 0, 'qlim', deg2rad([-360 360]));
+            link(8) = Link('d', 1.25, 'a', 0, 'alpha', 0, 'qlim', deg2rad([-360 360]));  % End effector link
+
+
+   % Adjusting joint limits in CreateModel method
+            link(1).qlim = [-360 360]*pi/180;
+            link(2).qlim = [-360 360]*pi/180;
+            link(3).qlim = [-90 90]*pi/180;
+            link(4).qlim = [-170 170]*pi/180;
+            link(5).qlim = [-360 360]*pi/180;
+            link(6).qlim = [-360 360]*pi/180;
+            link(7).qlim = [-360 360]*pi/180;
+            link(8).qlim = [-360 360]*pi/180;
     % Create a serial link object for the KUKA robot
     self.model = SerialLink(link, 'name', 'KUKA LBR iiwa 7 R800 with 8th link');
 end
 
 
 
-
-        %% Plot and color robot (associate .ply files with links)
-        function PlotAndColourRobot(self, scaleFactor)
-            % If no scale factor is provided, use a default value of 0.01 (1% of the original size)
-            if nargin < 2
-                scaleFactor = 0.01;  % Default scaling factor
-            end
-
-            % Debugging output: Confirm the scale factor
-            disp(['Using scale factor: ', num2str(scaleFactor)]);
-
-            for linkIndex = 1:8  % Adjusted for 8 links
-                % Load the .ply file corresponding to each link
-                try
-                    [faceData, vertexData, plyData{linkIndex}] = plyread(['kukaLink', num2str(linkIndex), '.ply'], 'tri');
-                catch
-                    error(['Error loading .ply file for link ', num2str(linkIndex)]);
-                end
-                
-                % Debugging: Output the number of vertices
-                disp(['Loaded kukaLink', num2str(linkIndex), '.ply with ', num2str(size(vertexData, 1)), ' vertices.']);
-                
-                % Scale the vertex data down by the scale factor
-                vertexData = vertexData * scaleFactor;
-                
-                % Explicitly rotate link 5 by 90 degrees around the x-axis
-                if linkIndex == 5
-                    disp('Rotating link 5 vertices by 90 degrees around x-axis');
-                    rotationMatrix = makehgtform('xrotate', pi/2);  % 90 degrees around x-axis
-                    vertexData = (rotationMatrix(1:3, 1:3) * vertexData')';  % Apply the rotation
-                end
-                
-                % Attach the scaled (and rotated) 3D data to the robot model
-                self.model.faces{linkIndex + 1} = faceData;
-                self.model.points{linkIndex + 1} = vertexData;
-            end
-
-            % Adjust the workspace to fit the scaled model
-            workspaceDimensions = [-5 5 -5 5 0 5];  % Increased Z-axis limit to fit better
-
-            % Plot the robot in 3D with the scaled model and adjusted workspace
-            self.model.plot3d(zeros(1, self.model.n), 'noarrow', 'workspace', workspaceDimensions);
-            drawnow;  % Force the plot to update
-
-            % Add lighting if it's not already present
-            if isempty(findobj(get(gca, 'Children'), 'Type', 'Light'))
-                camlight;
-            end
-            self.model.delay = 0;
-        end
+%% Plot and color robot (associate .ply files with links)
+function PlotAndColourRobot(self, scaleFactor)
+    % If no scale factor is provided, use a default value of 0.01 (1% of the original size)
+    if nargin < 2
+        scaleFactor = 0.01;  % Default scaling factor
     end
+
+    % Debugging output: Confirm the scale factor
+    disp(['Using scale factor: ', num2str(scaleFactor)]);
+
+    for linkIndex = 1:8  % Adjusted for 8 links
+        % Load the .ply file corresponding to each link
+        try
+            [faceData, vertexData, plyData{linkIndex}] = plyread(['kukaLink', num2str(linkIndex), '.ply'], 'tri');
+        catch
+            error(['Error loading .ply file for link ', num2str(linkIndex)]);
+        end
+        
+        % Debugging: Output the number of vertices
+        disp(['Loaded kukaLink', num2str(linkIndex), '.ply with ', num2str(size(vertexData, 1)), ' vertices.']);
+        
+        % Scale the vertex data down by the scale factor
+        vertexData = vertexData * scaleFactor;
+        
+        % Remove the rotation for link 5
+        % No rotation applied here
+        
+        % Attach the scaled 3D data to the robot model
+        self.model.faces{linkIndex + 1} = faceData;
+        self.model.points{linkIndex + 1} = vertexData;
+    end
+
+    % Adjust the workspace to fit the scaled model
+    workspaceDimensions = [-5 5 -5 5 0 5];  % Increased Z-axis limit to fit better
+
+    % Plot the robot in 3D with the scaled model and adjusted workspace
+    self.model.plot3d(zeros(1, self.model.n), 'noarrow', 'workspace', workspaceDimensions);
+    drawnow;  % Force the plot to update
+
+    % Add lighting if it's not already present
+    if isempty(findobj(get(gca, 'Children'), 'Type', 'Light'))
+        camlight;
+    end
+    self.model.delay = 0;
 end
+    end 
+end 
