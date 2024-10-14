@@ -1,0 +1,161 @@
+%% Initialize Environment, UR5, and Omron Robots
+clear; clc; close all;
+
+% Initialize UR5 robot at the origin with base transformation
+ur5BaseTr = transl(0, 0, 0);  % Base at origin
+ur5Robot = LinearUR5(ur5BaseTr);  % Create instance of the LinearUR5 robot
+
+% Initialize Omron robot at a shifted location
+omronBaseTr = transl(1, 0, 0.5);  % Omron shifted along X-axis
+omronRobot = Omron(omronBaseTr);  % Create instance of the Omron robot
+
+%% Set the Desired Starting Position for the UR5 Robot
+% Corrected initial joint configuration for UR5 with 7 DOF
+initialJointAnglesUR5 = [0, 0, -pi/2, 0, pi/2, pi/2, pi/2, pi];  % 8 joint angles
+  
+
+% Plot the UR5 robot in the initial position
+ur5Robot.model.plot(initialJointAnglesUR5);
+
+%% Load and Plot the Ball (STL file)
+ballPosition = transl(1.2, -0.5, 0.1);  % Ball position
+ball = stlread('BasketTopu.stl');  % Load STL file for the ball
+ballVertices = ball.Points * 0.0008;  % Scale vertices
+ballFaces = ball.ConnectivityList;
+
+% Plot the initial position of the ball
+hold on;
+patch('Faces', ballFaces, 'Vertices', ballVertices + ballPosition(1:3, 4)', ...
+      'FaceVertexCData', repmat([0.8, 0.3, 0.3], size(ballVertices, 1), 1), ...
+      'FaceColor', 'flat', 'EdgeColor', 'none');
+
+%% Set up Floor Texture and Environment
+[X, Y] = meshgrid(-2:0.1:2, -2:0.1:2);  
+Z = zeros(size(X));  
+
+floorTexture = imread('concrete.jpg');  
+surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'none');
+axis([-2 2 -2 2 0 2]);  
+view(3);  
+
+%% Plot Initial Robot Configurations
+% Plot the Omron robot in its initial configuration
+omronRobot.PlotAndColourRobot();
+
+%% Calculate Target Pose and Perform IK for Omron Robot
+targetPose = transl(1.1, -0.4, 0.2);  % Adjusted ball position
+
+% Retrieve the current joint configuration
+qCurrent = omronRobot.model.getpos();
+
+% Check if qCurrent is valid
+if isempty(qCurrent)
+    error('Omron robot is not properly initialized.');
+end
+
+% Get the number of joints and create an initial joint angle guess
+numJoints = omronRobot.model.n;  % Use DOF from the model
+q0 = zeros(1, numJoints);
+
+% Perform Inverse Kinematics with fallback to ikcon if needed
+try
+    targetJointAngles = omronRobot.model.ikine(targetPose, q0, [1 1 1 0 0 0]);
+catch
+    disp('ikine() failed, trying ikcon()...');
+    targetJointAngles = omronRobot.model.ikcon(targetPose, q0);
+end
+
+% Validate the IK result
+if any(isnan(targetJointAngles)) || length(targetJointAngles) ~= numJoints
+    error('Inverse Kinematics failed or joint configurations do not match.');
+end
+
+%% Animate the Omron Robot's Movement towards the Ball
+steps = 50;  % Number of steps
+trajectory = jtraj(qCurrent, targetJointAngles, steps);
+
+for i = 1:steps
+    omronRobot.model.animate(trajectory(i, :));
+    drawnow;
+end
+
+%% Lift the Omron Robot Up
+% Adjust the Z-axis value for the lift
+liftPose = targetPose * transl(0, 0, 1);  % Lifting 1 meter up
+
+% Perform Inverse Kinematics to get joint angles for the lifted position
+liftJointAngles = omronRobot.model.ikcon(liftPose, targetJointAngles);
+
+% Validate the IK result
+if any(isnan(liftJointAngles))
+    error('Inverse Kinematics failed for the lift pose.');
+end
+
+% Generate a smooth trajectory for the lift motion
+liftSteps = 30;  % Number of steps for the lift
+liftTrajectory = jtraj(targetJointAngles, liftJointAngles, liftSteps);
+
+% Animate the lifting motion
+for i = 1:liftSteps
+    omronRobot.model.animate(liftTrajectory(i, :));
+    drawnow;
+end
+
+%% Rotate the First Link by 90 Degrees
+rotationSteps = 20;  % Number of steps for the rotation
+finalLiftAngles = liftJointAngles;  % Start from the lifted configuration
+
+% Add -90 degrees (in radians) to the first joint angle
+finalLiftAngles(1) = finalLiftAngles(1) + deg2rad(-90);
+
+% Generate the trajectory for the rotation
+rotationTrajectory = jtraj(liftJointAngles, finalLiftAngles, rotationSteps);
+
+% Animate the rotation of the first link
+for i = 1:rotationSteps
+    omronRobot.model.animate(rotationTrajectory(i, :));
+    drawnow;
+end
+
+
+%% IN THE PROCESS OF FIXING
+
+% %% Define the Final Target Pose (-0.3, -0.8, 0.3)
+% finalPosition = transl(-0.3, -0.8, 0.3);  % Desired final position
+% 
+% % Retrieve the current joint configuration after the 90-degree rotation
+% qCurrent = omronRobot.model.getpos();  % Current configuration
+% 
+% disp('qCurrent:');
+% disp(qCurrent);  % Debugging step to inspect the current joint configuration
+% 
+% %% Use Inverse Kinematics to Compute Final Joint Angles
+% try
+%     % Attempt IK using qCurrent as the initial guess
+%     finalJointAngles = omronRobot.model.ikine(finalPosition, qCurrent, [1 1 1 0 0 0], 'tol', 1e-4, 'ilimit', 1000);
+% catch
+%     % Fallback to ikcon() if ikine() fails
+%     disp('ikine() failed, trying ikcon()...');
+%     finalJointAngles = omronRobot.model.ikcon(finalPosition, qCurrent);
+% end
+% 
+% disp('finalJointAngles:');
+% disp(finalJointAngles);  % Debugging step to inspect the IK result
+% 
+% % Check if the size of finalJointAngles matches qCurrent (7 DOF)
+% if numel(finalJointAngles) ~= numel(qCurrent)
+%     error('Inverse Kinematics returned incorrect number of joint angles.');
+% end
+% 
+% %% Generate a Smooth Trajectory to the Final Position
+% finalSteps = 30;  % Number of steps for the final motion
+% finalTrajectory = jtraj(qCurrent, finalJointAngles, finalSteps);  % Generate trajectory
+% 
+% %% Animate the Robot Moving to the Final Position
+% for i = 1:finalSteps
+%     omronRobot.model.animate(finalTrajectory(i, :));  % Animate each step
+%     drawnow;
+% end
+
+% % Display a message indicating the robot has reached the target position
+% disp('Omron robot has reached the final target position of [-0.3, -0.8, 0.3].');
