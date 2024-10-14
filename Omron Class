@@ -1,0 +1,109 @@
+classdef Omron < RobotBaseClass
+    %% Omron 7-Link Robot Model with DH Parameters
+
+    properties(Access = public)
+        plyFileNameStem = 'Omron';  % Name stem for .ply files
+    end
+
+    methods
+        %% Constructor
+        function self = Omron(baseTr)
+            % Create the Omron robot model
+            self.CreateModel();
+
+            % Set base transformation matrix to identity if not provided
+            if nargin < 1
+                baseTr = eye(4);
+            end
+
+            % Ensure the base transformation matrix is 4x4
+            assert(all(size(baseTr) == [4, 4]), 'baseTr must be a 4x4 matrix');
+
+            % Initialize the model base and apply the transformation
+            self.model.base = baseTr;
+
+            % Plot and color the robot using .ply files
+            self.PlotAndColourRobot();
+        end
+
+        %% Create the robot model using DH parameters
+        function CreateModel(self)
+            % Define the robot's links with DH parameters
+            L(1) = Link('d', 0.3, 'a', 0.0, 'alpha', -pi/2, 'qlim', deg2rad([-180 180]));
+            L(2) = Link('d', 0.0, 'a', 0.3, 'alpha', 0, 'qlim', deg2rad([-90 90]));
+            L(3) = Link('d', 0.0, 'a', 0.3, 'alpha', -pi/2, 'qlim', deg2rad([-170 170]));
+            L(4) = Link('d', 0.2, 'a', 0.0, 'alpha', pi/2, 'qlim', deg2rad([-120 120]));
+            L(5) = Link('d', 0.0, 'a', 0.2, 'alpha', -pi/2, 'qlim', deg2rad([-170 170]));
+            L(6) = Link('d', 0.0, 'a', 0.0, 'alpha', pi/2, 'qlim', deg2rad([-180 180]));
+            L(7) = Link('d', 0.1, 'a', 0.0, 'alpha', 0, 'qlim', deg2rad([-360 360]));
+            % Create a serial-link robot model using the defined links
+            self.model = SerialLink(L, 'name', 'Omron 7-Link Robot');
+
+            % Display the DH parameters and robot structure
+            disp('Omron 7-Link Robot Model:');
+            self.model.display();
+        end
+
+        %% Plot and color the robot using .ply files
+        function PlotAndColourRobot(self)
+            % Set the path to the directory where .ply files are located
+            plyFilePath = 'C:/Users/Volka/OneDrive/Matlab Work/LabAssignment2/';  % Update the path as needed
+
+            % Initialize the home configuration
+            self.homeQ = zeros(1, self.model.n);
+
+            % Plot the robot at its home configuration
+            self.model.plot(self.homeQ, 'workspace', [-1 1 -1 1 -1 1], 'delay', 0);
+
+            % Hold the current plot to overlay the .ply models
+            hold on;
+
+            % Load and display .ply files for each link
+            for i = 1:self.model.n
+                % Construct the full path to the .ply file
+                filePath = fullfile(plyFilePath, sprintf('%s_link%d.ply', self.plyFileNameStem, i));
+
+                % Check if the file exists
+                if ~isfile(filePath)
+                    error('File not found: %s', filePath);
+                end
+
+                % Read the .ply file
+                [f, v, data] = plyread(filePath, 'tri');
+
+                % Apply scaling to the vertices
+                v = v * 0.00000001;  % Adjusted scaling factor
+
+                % Get the transformation matrix up to the current link
+                linkTransform = self.model.A(1:i, self.homeQ).T;
+
+                % Correct any internal rotation or translation in the .ply model
+                internalRotation = trotx(pi);  % Example rotation (adjust as needed)
+                correctedTransform = linkTransform * internalRotation;
+
+                % Apply the transformation to the vertices
+                transformedVertices = (correctedTransform * [v, ones(size(v, 1), 1)]')';
+                transformedVertices = transformedVertices(:, 1:3);  % Extract x, y, z coordinates
+
+                % Handle color data from the .ply file
+                if isfield(data, 'vertex') && isfield(data.vertex, 'red')
+                    colors = [data.vertex.red, data.vertex.green, data.vertex.blue] / 255;
+                elseif isfield(data, 'vertex') && isfield(data.vertex, 'color')
+                    colors = data.vertex.color / 255;
+                else
+                    colors = repmat([0.5, 0.5, 0.5], size(v, 1), 1);  % Default to gray
+                end
+
+                % Create a patch object for the link
+                patch('Faces', f, 'Vertices', transformedVertices, ...
+                      'FaceVertexCData', colors, 'FaceColor', 'flat', 'EdgeColor', 'none');
+            end
+
+            % Release the plot hold
+            hold off;
+
+            % Add a title to the figure
+            title('Omron 7-Link Robot with .ply Model Visualization');
+        end
+    end
+end
