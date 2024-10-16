@@ -1,0 +1,56 @@
+function OmronRobotGUI
+    % Create a new figure for the GUI
+    fig = uifigure('Name', 'Omron Robot Control Panel', 'Position', [100 100 800 600]);
+
+    % Initialize the Omron robot model
+    baseTr = eye(4);  % Identity matrix for base transformation
+    robot = Omron(baseTr);
+
+    % Create a slider for each joint of the robot
+    sliders = gobjects(1, robot.model.n);  % Pre-allocate sliders array
+    sliderLabels = gobjects(1, robot.model.n);  % Pre-allocate label array
+
+    % Create a panel to hold the sliders
+    panel = uipanel(fig, 'Position', [50 50 300 500], 'Title', 'Joint Control');
+
+    % Callback function to update the robot's configuration
+    function updateRobot(~, ~)
+        jointAngles = zeros(1, robot.model.n);  % Initialize joint angles array
+        for i = 1:robot.model.n
+            jointAngles(i) = sliders(i).Value;  % Get the value from each slider
+        end
+        robot.model.plot(jointAngles);  % Update the robot plot with new angles
+    end
+
+    % Create sliders and labels for each joint
+    for i = 1:robot.model.n
+        % Label for the slider
+        sliderLabels(i) = uilabel(panel, ...
+            'Position', [10, 500 - 40 * i, 100, 30], ...
+            'Text', sprintf('Joint %d', i));
+
+        % Slider for controlling the joint angle
+        sliders(i) = uislider(panel, ...
+            'Position', [120, 510 - 40 * i, 150, 3], ...
+            'Limits', rad2deg(robot.model.links(i).qlim), ...  % Set slider limits based on joint limits
+            'ValueChangedFcn', @updateRobot, ...  % Call updateRobot when slider value changes
+            'Value', 0);  % Default value for the slider
+    end
+
+    % Button to reset all joints to zero configuration
+    resetButton = uibutton(fig, 'push', ...
+        'Text', 'Reset', ...
+        'Position', [400 100 100 30], ...
+        'ButtonPushedFcn', @(btn, event) resetRobot());
+
+    % Callback function to reset the robot to the home position
+    function resetRobot()
+        for i = 1:robot.model.n
+            sliders(i).Value = 0;  % Reset slider values to 0
+        end
+        robot.model.plot(zeros(1, robot.model.n));  % Plot robot in home configuration
+    end
+
+    % Initial plot of the robot in the home position
+    robot.model.plot(zeros(1, robot.model.n), 'workspace', [-1 1 -1 1 -1 1]);
+end
