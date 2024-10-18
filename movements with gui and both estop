@@ -1,0 +1,287 @@
+% Initialize Arduino and push button (Digital Pin 2)
+arduinoObj = arduino('COM3', 'Uno');  % Adjust 'COM3' to your actual port
+buttonPin = 'D2';  % Define the pin number where the pushbutton is connected
+configurePin(arduinoObj, buttonPin, 'DigitalInput');  % Set the pin mode as input
+
+% Global flag for E-Stop (Pause/Resume)
+global isStopped;
+isStopped = false;
+
+% Initialize UR5 and Omron Robots
+ur5BaseTr = transl(0.5, 0.5, 0);  
+ur5Robot = LinearUR5(ur5BaseTr);  
+omronBaseTr = transl(1, 0, 0.5);  
+omronRobot = Omron(omronBaseTr);  
+
+% GUI Panel
+fig = uifigure('Name', 'Robot Control Panel', 'Position', [100, 100, 800, 700]);
+
+% Emergency Stop and Go Buttons
+emergencyButton = uibutton(fig, 'push', 'Text', 'E-Stop', 'Position', [200, 100, 100, 50], ...
+    'ButtonPushedFcn', @(~, ~) emergencyStop());
+goButton = uibutton(fig, 'push', 'Text', 'Go', 'Position', [500, 100, 100, 50], ...
+    'ButtonPushedFcn', @(~, ~) continueSimulation());
+
+% Start the pushbutton handler in a background task
+t = timer('ExecutionMode', 'fixedRate', 'Period', 0.1, 'TimerFcn', @(~, ~) arduinoButtonHandler(arduinoObj, buttonPin));
+start(t);
+
+%% Arduino Pushbutton Handler Function
+function arduinoButtonHandler(arduinoObj, buttonPin)
+    global isStopped;
+    persistent buttonState;  % Track the previous state of the button
+    if isempty(buttonState)
+        buttonState = 0;  % Initialize the button state if undefined
+    end
+    
+    newButtonState = readDigitalPin(arduinoObj, buttonPin);  % Read the current state
+    if newButtonState ~= buttonState  % If the state has changed
+        buttonState = newButtonState;  % Update the button state
+        
+        if buttonState == 1  % Button pressed
+            if isStopped
+                continueSimulation();  % If paused, continue simulation
+            else
+                emergencyStop();  % If running, pause the simulation
+            end
+        end
+    end
+end
+
+%% Function to handle Emergency Stop (Pause Simulation)
+function emergencyStop()
+    global isStopped;
+    disp('Emergency Stop Activated! Simulation Paused.');
+    isStopped = true;
+end
+
+%% Function to Continue Simulation (Resume after Pause)
+function continueSimulation()
+    global isStopped;
+    disp('Continuing Simulation...');
+    isStopped = false;
+end
+
+%% Update Omron Robot Joint Angles
+function updateOmronJoint(jointIndex, jointValue)
+    global isStopped;
+    if isStopped
+        return;  % Prevent updates if simulation is paused
+    end
+    qCurrent = omronRobot.model.getpos();
+    qCurrent(jointIndex) = deg2rad(jointValue);
+    omronRobot.model.animate(qCurrent);
+end
+
+%% Update UR5 Robot Joint Angles
+function updateUR5Joint(jointIndex, jointValue)
+    global isStopped;
+    if isStopped
+        return;  % Prevent updates if simulation is paused
+    end
+    qCurrent = ur5Robot.model.getpos();
+    qCurrent(jointIndex) = deg2rad(jointValue);
+    ur5Robot.model.animate(qCurrent);
+end
+
+%% Set the Desired Starting Position for the UR5 Robot
+initialJointAnglesUR5 = [0, 0, -pi/2, 0, pi/2, pi/2, pi/2, pi];  % 8 joint values
+
+% Plot the UR5 robot in the initial position
+ur5Robot.model.plot(initialJointAnglesUR5);
+
+%% Load and Plot the Ball (STL file)
+ballPosition = transl(1.2, -0.5, 0.1);  % Ball initial position
+ball = stlread('BasketTopu.stl');  % Load STL file
+ballVertices = ball.Points * 0.0008;  % Scale vertices
+ballFaces = ball.ConnectivityList;
+
+% Plot the ball in the scene
+hold on;
+ballHandle = patch('Faces', ballFaces, 'Vertices', ballVertices + ballPosition(1:3, 4)', ...
+    'FaceVertexCData', repmat([0.8, 0.3, 0.3], size(ballVertices, 1), 1), ...
+    'FaceColor', 'flat', 'EdgeColor', 'none');
+
+%% Set up Floor Texture and Environment
+[X, Y] = meshgrid(-9:0.1:9, -9:0.1:9);
+Z = zeros(size(X));
+floorTexture = imread('concrete.jpg');  
+surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'none');
+axis([-9 9 -9 9 0 9]);  
+view(3);
+
+%% Plot Initial Robot Configurations
+omronRobot.PlotAndColourRobot();
+
+%% Calculate Target Pose and Perform IK for Omron Robot
+targetPose = transl(1.1, -0.4, 0.2);  % Adjusted ball position
+qCurrent = omronRobot.model.getpos();
+q0 = zeros(1, omronRobot.model.n);  % Initial joint configuration
+
+try
+    targetJointAngles = omronRobot.model.ikine(targetPose, q0, [1 1 1 0 0 0]);
+catch
+    targetJointAngles = omronRobot.model.ikcon(targetPose, q0);
+end
+
+steps = 50;
+trajectory = jtraj(qCurrent, targetJointAngles, steps);
+for i = 1:steps
+    global isStopped;
+    while isStopped  % Wait here until the isStopped flag is cleared
+        pause(0.1);  % Prevents busy-waiting
+    end
+    omronRobot.model.animate(trajectory(i, :));
+    drawnow;
+end
+
+if isvalid(ballHandle)
+    delete(ballHandle);  
+    disp('Ball has been removed.');
+end
+
+%% Lift the Omron Robot Up
+liftPose = targetPose * transl(0, 0, 1);
+liftJointAngles = omronRobot.model.ikcon(liftPose, targetJointAngles);
+liftSteps = 30;
+liftTrajectory = jtraj(targetJointAngles, liftJointAngles, liftSteps);
+
+for i = 1:liftSteps
+    global isStopped;
+    while isStopped
+        pause(0.1);  % Pause the loop but allow for resumption
+    end
+    omronRobot.model.animate(liftTrajectory(i, :));
+    drawnow;
+end
+
+%% Rotate Omron's Joints Sequentially
+finalLiftAngles = liftJointAngles;
+finalLiftAngles(1) = finalLiftAngles(1) - deg2rad(90);  % Rotate first joint
+
+rotationTrajectory = jtraj(liftJointAngles, finalLiftAngles, 20);
+for i = 1:20
+    global isStopped;
+    while isStopped
+        pause(0.1);
+    end
+    omronRobot.model.animate(rotationTrajectory(i, :));
+    drawnow;
+end
+
+%% Rotate the Fifth Joint by -45 Degrees
+fifthJointRotationSteps = 20;  
+fifthJointAngles = finalLiftAngles;  
+
+fifthJointAngles(5) = fifthJointAngles(5) + deg2rad(-45);
+fifthJointTrajectory = jtraj(finalLiftAngles, fifthJointAngles, fifthJointRotationSteps);
+
+for i = 1:fifthJointRotationSteps
+    global isStopped;
+    while isStopped
+        pause(0.1);
+    end
+    omronRobot.model.animate(fifthJointTrajectory(i, :));
+    drawnow;
+end
+
+%% Rotate the Third Joint by -20 Degrees
+thirdJointRotationSteps = 20;  
+thirdJointAngles = fifthJointAngles;  
+
+thirdJointAngles(3) = thirdJointAngles(3) + deg2rad(-20);
+thirdJointTrajectory = jtraj(fifthJointAngles, thirdJointAngles, thirdJointRotationSteps);
+
+for i = 1:thirdJointRotationSteps
+    global isStopped;
+    while isStopped
+        pause(0.1);
+    end
+    omronRobot.model.animate(thirdJointTrajectory(i, :));
+    drawnow;
+end
+
+%% Rotate the Second Link by 70 Degrees
+secondLinkRotationSteps = 20;  
+finalRotationAngles = thirdJointAngles;  
+
+finalRotationAngles(2) = finalRotationAngles(2) + deg2rad(70);
+secondLinkTrajectory = jtraj(thirdJointAngles, finalRotationAngles, secondLinkRotationSteps);
+
+for i = 1:secondLinkRotationSteps
+    global isStopped;
+    while isStopped
+        pause(0.1);
+    end
+    omronRobot.model.animate(secondLinkTrajectory(i, :));
+    drawnow;
+end
+
+%% UR5 Launch Sequence - Moving to Upright Position
+initialAngles = [0, 0, -pi/2, 0, pi/2, pi/2, pi/2, pi];  % 8 joint values
+finalAngles = [0, 0, -pi/9, 0, pi/2, pi/2, pi/2, pi];    % 8 joint values
+
+qMatrix = jtraj(initialAngles, finalAngles, 100);
+for i = 1:100
+    global isStopped;
+    while isStopped
+        pause(0.1);
+    end
+    ur5Robot.model.animate(qMatrix(i, :));
+    pause(0.05);
+end
+
+%% Ball Launch Simulation
+endEffectorPose = ur5Robot.model.fkine(finalAngles);
+x0 = endEffectorPose.t(1);  
+y0 = endEffectorPose.t(2);  
+z0 = endEffectorPose.t(3);  
+
+v0 = 8;  
+theta = pi/6;  
+phi = 0;  
+g = 9.81;  
+
+t_end = 2;  
+timeSteps = linspace(0, t_end, 150);  
+
+scaled_vertices = ball.Points * 0.001;
+hBall = patch('Faces', ball.ConnectivityList, 'Vertices', scaled_vertices, ...
+    'FaceColor', [0.8 0.8 1.0], 'EdgeColor', 'none');
+
+x_traj = zeros(size(timeSteps));
+y_traj = zeros(size(timeSteps));
+z_traj = zeros(size(timeSteps));
+
+for i = 1:length(timeSteps)
+    global isStopped;
+    while isStopped
+        pause(0.1);
+    end
+
+    t = timeSteps(i);
+    
+    x_traj(i) = x0;  
+    y_traj(i) = y0 + v0 * t * cos(theta);  
+    z_traj(i) = z0 + v0 * t * sin(theta) - 0.5 * g * t^2;  
+    
+    if z_traj(i) < 0 || z_traj(i) > 3
+        x_traj = x_traj(1:i);
+        y_traj = y_traj(1:i);
+        z_traj = z_traj(1:i);
+        break;
+    end
+
+    ballPosition = transl(x_traj(i), y_traj(i), z_traj(i));
+    new_vertices = (ballPosition(1:3, 1:3) * scaled_vertices')' + ballPosition(1:3, 4)';
+    set(hBall, 'Vertices', new_vertices);
+
+    pause(0.005);  
+end
+
+plot3(x_traj, y_traj, z_traj, 'r-', 'LineWidth', 2);
+xlabel('X'); ylabel('Y'); zlabel('Z');
+title('Forward Arc Ball Trajectory (Max Z = 3)');
+grid on;
+
+hold off;
