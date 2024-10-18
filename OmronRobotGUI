@@ -6,6 +6,10 @@ function OmronRobotGUI
     baseTr = eye(4);  % Identity matrix for base transformation
     robot = Omron(baseTr);
 
+    % Variables to control the robot animation
+    isRunning = false;  % Flag for running animation
+    t = timer('ExecutionMode', 'fixedRate', 'Period', 0.05, 'TimerFcn', @animateRobot);
+
     % Create a slider for each joint of the robot
     sliders = gobjects(1, robot.model.n);  % Pre-allocate sliders array
     sliderLabels = gobjects(1, robot.model.n);  % Pre-allocate label array
@@ -13,13 +17,15 @@ function OmronRobotGUI
     % Create a panel to hold the sliders
     panel = uipanel(fig, 'Position', [50 50 300 500], 'Title', 'Joint Control');
 
-    % Callback function to update the robot's configuration
-    function updateRobot(~, ~)
-        jointAngles = zeros(1, robot.model.n);  % Initialize joint angles array
-        for i = 1:robot.model.n
-            jointAngles(i) = sliders(i).Value;  % Get the value from each slider
+    % Store the current joint angles
+    currentJointAngles = zeros(1, robot.model.n);
+
+    % Callback function to update the robot's configuration for one joint in real-time
+    function updateRobotRealTime(slider, event, jointIndex)
+        if ~isRunning  % Only update if not in automatic animation mode
+            currentJointAngles(jointIndex) = deg2rad(event.Value);  % Update only the joint that corresponds to this slider
+            robot.model.plot(currentJointAngles);  % Update the robot plot with new angles
         end
-        robot.model.plot(jointAngles);  % Update the robot plot with new angles
     end
 
     % Create sliders and labels for each joint
@@ -33,7 +39,7 @@ function OmronRobotGUI
         sliders(i) = uislider(panel, ...
             'Position', [120, 510 - 40 * i, 150, 3], ...
             'Limits', rad2deg(robot.model.links(i).qlim), ...  % Set slider limits based on joint limits
-            'ValueChangedFcn', @updateRobot, ...  % Call updateRobot when slider value changes
+            'ValueChangingFcn', @(slider, event) updateRobotRealTime(slider, event, i), ...  % Call updateRobotRealTime for the specific joint
             'Value', 0);  % Default value for the slider
     end
 
@@ -43,14 +49,58 @@ function OmronRobotGUI
         'Position', [400 100 100 30], ...
         'ButtonPushedFcn', @(btn, event) resetRobot());
 
+    % Button to start the automatic animation
+    startButton = uibutton(fig, 'push', ...
+        'Text', 'Start', ...
+        'Position', [400 150 100 30], ...
+        'ButtonPushedFcn', @(btn, event) startAnimation());
+
+    % Button to stop the automatic animation
+    stopButton = uibutton(fig, 'push', ...
+        'Text', 'Stop', ...
+        'Position', [400 200 100 30], ...
+        'ButtonPushedFcn', @(btn, event) stopAnimation());
+
     % Callback function to reset the robot to the home position
     function resetRobot()
+        stopAnimation();  % Stop animation when resetting
+        currentJointAngles = zeros(1, robot.model.n);  % Reset joint angles
         for i = 1:robot.model.n
             sliders(i).Value = 0;  % Reset slider values to 0
         end
-        robot.model.plot(zeros(1, robot.model.n));  % Plot robot in home configuration
+        robot.model.plot(currentJointAngles);  % Plot robot in home configuration
+    end
+
+    % Function to start the animation
+    function startAnimation()
+        if ~isRunning
+            isRunning = true;
+            start(t);  % Start the timer for animation
+        end
+    end
+
+    % Function to stop the animation
+    function stopAnimation()
+        if isRunning
+            isRunning = false;
+            stop(t);  % Stop the timer for animation
+        end
+    end
+
+    % Function for automatic robot animation
+    function animateRobot(~, ~)
+        if isRunning
+            jointAngles = zeros(1, robot.model.n);  % Initialize joint angles array
+            for i = 1:robot.model.n
+                % Update each joint angle using a sine wave for smooth animation
+                jointAngles(i) = deg2rad(30) * sin(now * 2 * pi);  % Example oscillation
+                sliders(i).Value = rad2deg(jointAngles(i));  % Update slider to match animation
+            end
+            robot.model.plot(jointAngles);  % Plot the robot with new joint angles
+        end
     end
 
     % Initial plot of the robot in the home position
-    robot.model.plot(zeros(1, robot.model.n), 'workspace', [-1 1 -1 1 -1 1]);
+    robot.model.plot(currentJointAngles, 'workspace', [-1 1 -1 1 -1 1]);
+
 end
