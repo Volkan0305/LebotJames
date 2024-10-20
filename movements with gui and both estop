@@ -104,6 +104,25 @@ ballHandle = patch('Faces', ballFaces, 'Vertices', ballVertices + ballPosition(1
     'FaceVertexCData', repmat([0.8, 0.3, 0.3], size(ballVertices, 1), 1), ...
     'FaceColor', 'flat', 'EdgeColor', 'none');
 
+
+
+% Load and Plot the Basket (STL file)
+basketPosition = transl(0, 4, 0.0);  % Set the position for the basket
+basket = stlread('basket.stl');  % Load STL file for the basket
+basketVertices = basket.Points * 0.001;  % Scale down if necessary
+basketFaces = basket.ConnectivityList;
+
+% Plot the basket in the scene
+hold on;
+basketHandle = patch('Faces', basketFaces, 'Vertices', basketVertices + basketPosition(1:3, 4)', ...
+    'FaceVertexCData', repmat([0.7, 0.7, 0.7], size(basketVertices, 1), 1), ...  % Set a gray color for the basket
+    'FaceColor', 'flat', 'EdgeColor', 'none');
+
+
+
+
+
+
 %% Set up Floor Texture and Environment
 [X, Y] = meshgrid(-5:0.1:5, -5:0.1:5);
 Z = zeros(size(X));
@@ -219,6 +238,21 @@ for i = 1:secondLinkRotationSteps
     omronRobot.model.animate(secondLinkTrajectory(i, :));
     drawnow;
 end
+
+
+
+%% Rotate the Second Link by 70 Degrees
+secondLinkRotationSteps = 20;  
+finalRotationAngles = thirdJointAngles;  
+
+finalRotationAngles(2) = finalRotationAngles(2) + deg2rad(-70);
+secondLinkTrajectory = jtraj(thirdJointAngles, finalRotationAngles, secondLinkRotationSteps);
+
+for i = 1:secondLinkRotationSteps
+    omronRobot.model.animate(secondLinkTrajectory(i, :));
+    drawnow;
+end 
+
 
 %% UR5 Launch Sequence - Moving to Upright Position
 initialAngles = [0, 0, -pi/2, 0, pi/2, pi/2, pi/2, pi];  % 8 joint values
