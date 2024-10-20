@@ -28,15 +28,16 @@ ballHandle = patch('Faces', ballFaces, 'Vertices', ballVertices + ballPosition(1
     'FaceColor', 'flat', 'EdgeColor', 'none');
 
 %% Set up Floor Texture and Environment
-[X, Y] = meshgrid(-9:0.1:9, -9:0.1:9);
+[X, Y] = meshgrid(-5:0.1:5, -5:0.1:5);
 Z = zeros(size(X));
 floorTexture = imread('concrete.jpg');  
 surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'none');
-axis([-9 9 -9 9 0 9]);  
+axis([-5 5 -5 5 0 5]);  
 view(3);
 
 %% Plot Initial Robot Configurations
 omronRobot.PlotAndColourRobot();
+
 
 %% Calculate Target Pose and Perform IK for Omron Robot
 targetPose = transl(1.1, -0.4, 0.2);  % Adjusted ball position
@@ -153,7 +154,7 @@ x0 = endEffectorPose.t(1);  % X-coordinate of the end effector
 y0 = endEffectorPose.t(2);  % Y-coordinate of the end effector
 z0 = endEffectorPose.t(3);  % Z-coordinate of the end effector
 
-v0 = 8;  % Adjusted velocity to control trajectory length
+v0 = 8 / sqrt(2);  % Adjusted velocity to control trajectory length
 theta = pi/6;  % Angle to create a smooth arc in the YZ plane (30 degrees)
 phi = 0;  % Set to 0 to launch along the positive Y-axis (forward)
 g = 9.81;  % Gravity constant
@@ -198,7 +199,5 @@ plot3(x_traj, y_traj, z_traj, 'r-', 'LineWidth', 2);
 xlabel('X'); ylabel('Y'); zlabel('Z');
 title('Forward Arc Ball Trajectory (Max Z = 3)');
 grid on;
-
-
 
 hold off;
