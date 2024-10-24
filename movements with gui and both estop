@@ -131,6 +131,38 @@ surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'no
 axis([-5 5 -5 5 0 5]);  
 view(3);
 
+
+%% Fencing 
+t = hgtransform;
+h_1 = PlaceObject('barrier1.5x0.2x1m.ply',[0,1.5,0]);  % Place fence at desired position
+set(h_1, 'Parent', t);
+rotationAngle = pi/2;  % Example:  90degrees, modify this to align with your yellow line
+rotationMatrix = makehgtform('zrotate', rotationAngle);
+set(t, 'Matrix', rotationMatrix);
+h_1 = PlaceObject('barrier1.5x0.2x1m.ply',[0,-2,0]);  % Place fence at desired position
+set(h_1, 'Parent', t);
+rotationAngle = pi/2;  % Example:  90degrees, modify this to align with your yellow line
+rotationMatrix = makehgtform('zrotate', rotationAngle);
+set(t, 'Matrix', rotationMatrix);
+h_2 = PlaceObject('barrier1.5x0.2x1m.ply',[-1,1.2,0]);  % Place fence at desired position
+h_3 = PlaceObject('barrier1.5x0.2x1m.ply',[-1,-1.2,0]);  % Place fence at desired position
+
+h_4 = PlaceObject('barrier1.5x0.2x1m.ply',[1,1.2,0]);  % Place fence at desired position
+h_5 = PlaceObject('barrier1.5x0.2x1m.ply',[1,-1.2,0]);  % Place fence at desired position
+
+
+
+%% safety items
+ES =  PlaceObject('emergencyStopButton.ply', [1.8,-1.9,0])* trotx(-pi/2);
+FE = PlaceObject('fireExtinguisherElevated.ply', [1,-1.7,0.5]); 
+man =  PlaceObject('personMaleConstruction.ply', [-1,-2,0]);
+wall = PlaceObject('fenceAssemblyGreenRectangle4x8x2.5m.ply', [0,7.5,-1]);
+
+
+
+
+
+
 %% Plot Initial Robot Configurations
 omronRobot.PlotAndColourRobot();
 
