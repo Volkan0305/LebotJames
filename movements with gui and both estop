@@ -3,9 +3,10 @@ arduinoObj = arduino('COM3', 'Uno');  % Adjust 'COM3' to your actual port
 buttonPin = 'D2';  % Define the pin number where the pushbutton is connected
 configurePin(arduinoObj, buttonPin, 'DigitalInput');  % Set the pin mode as input
 
-% Global flag for E-Stop (Pause/Resume)
-global isStopped;
-isStopped = false;
+% Global flags for E-Stop and state
+global isStopped isDisengaged;
+isStopped = false;     % Tracks if the simulation is paused
+isDisengaged = false;  % Tracks if the E-Stop has been disengaged
 
 OmronRobotGUI();
 
@@ -18,9 +19,11 @@ omronRobot = Omron(omronBaseTr);
 % GUI Panel
 fig = uifigure('Name', 'Robot Control Panel', 'Position', [100, 100, 800, 700]);
 
-% Emergency Stop and Go Buttons
+% Emergency Stop Button
 emergencyButton = uibutton(fig, 'push', 'Text', 'E-Stop', 'Position', [200, 100, 100, 50], ...
-    'ButtonPushedFcn', @(~, ~) emergencyStop());
+    'ButtonPushedFcn', @(~, ~) emergencyButtonHandler());
+
+% Go Button
 goButton = uibutton(fig, 'push', 'Text', 'Go', 'Position', [500, 100, 100, 50], ...
     'ButtonPushedFcn', @(~, ~) continueSimulation());
 
@@ -30,7 +33,7 @@ start(t);
 
 %% Arduino Pushbutton Handler Function
 function arduinoButtonHandler(arduinoObj, buttonPin)
-    global isStopped;
+    global isStopped isDisengaged;
     persistent buttonState;  % Track the previous state of the button
     if isempty(buttonState)
         buttonState = 0;  % Initialize the button state if undefined
@@ -41,27 +44,45 @@ function arduinoButtonHandler(arduinoObj, buttonPin)
         buttonState = newButtonState;  % Update the button state
         
         if buttonState == 1  % Button pressed
-            if isStopped
-                continueSimulation();  % If paused, continue simulation
-            else
-                emergencyStop();  % If running, pause the simulation
-            end
+            emergencyButtonHandler();
         end
+    end
+end
+
+%% Emergency Button Handler Function for GUI and Arduino Button
+function emergencyButtonHandler()
+    global isStopped isDisengaged;
+    
+    if ~isStopped && ~isDisengaged  % First press, activate E-Stop
+        emergencyStop();
+    elseif isStopped && ~isDisengaged  % Second press, disengage E-Stop but remain paused
+        disengageEStop();
+    elseif isStopped && isDisengaged  % Third press, resume simulation
+        continueSimulation();
     end
 end
 
 %% Function to handle Emergency Stop (Pause Simulation)
 function emergencyStop()
-    global isStopped;
+    global isStopped isDisengaged;
     disp('Emergency Stop Activated! Simulation Paused.');
     isStopped = true;
+    isDisengaged = false;  % Ensure it's not disengaged yet
+end
+
+%% Function to Disengage E-Stop (Remain Paused)
+function disengageEStop()
+    global isDisengaged;
+    disp('E-Stop Disengaged, but Simulation is still Paused.');
+    isDisengaged = true;
 end
 
 %% Function to Continue Simulation (Resume after Pause)
 function continueSimulation()
-    global isStopped;
+    global isStopped isDisengaged;
     disp('Continuing Simulation...');
     isStopped = false;
+    isDisengaged = false;
 end
 
 %% Update Omron Robot Joint Angles
@@ -104,8 +125,6 @@ ballHandle = patch('Faces', ballFaces, 'Vertices', ballVertices + ballPosition(1
     'FaceVertexCData', repmat([0.8, 0.3, 0.3], size(ballVertices, 1), 1), ...
     'FaceColor', 'flat', 'EdgeColor', 'none');
 
-
-
 % Load and Plot the Basket (STL file)
 basketPosition = transl(0, 4, 0.0);  % Set the position for the basket
 basket = stlread('basket.stl');  % Load STL file for the basket
@@ -118,11 +137,6 @@ basketHandle = patch('Faces', basketFaces, 'Vertices', basketVertices + basketPo
     'FaceVertexCData', repmat([0.7, 0.7, 0.7], size(basketVertices, 1), 1), ...  % Set a gray color for the basket
     'FaceColor', 'flat', 'EdgeColor', 'none');
 
-
-
-
-
-
 %% Set up Floor Texture and Environment
 [X, Y] = meshgrid(-5:0.1:5, -5:0.1:5);
 Z = zeros(size(X));
@@ -131,42 +145,33 @@ surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'no
 axis([-5 5 -5 5 0 5]);  
 view(3);
 
-
-%% Fencing 
+%% Fencing and Safety Items
 t = hgtransform;
 h_1 = PlaceObject('barrier1.5x0.2x1m.ply',[0,1.5,0]);  % Place fence at desired position
 set(h_1, 'Parent', t);
-rotationAngle = pi/2;  % Example:  90degrees, modify this to align with your yellow line
+rotationAngle = pi/2;  
 rotationMatrix = makehgtform('zrotate', rotationAngle);
 set(t, 'Matrix', rotationMatrix);
-h_1 = PlaceObject('barrier1.5x0.2x1m.ply',[0,-2,0]);  % Place fence at desired position
+h_1 = PlaceObject('barrier1.5x0.2x1m.ply',[0,-2,0]);  
 set(h_1, 'Parent', t);
-rotationAngle = pi/2;  % Example:  90degrees, modify this to align with your yellow line
+rotationAngle = pi/2;  
 rotationMatrix = makehgtform('zrotate', rotationAngle);
 set(t, 'Matrix', rotationMatrix);
-h_2 = PlaceObject('barrier1.5x0.2x1m.ply',[-1,1.2,0]);  % Place fence at desired position
-h_3 = PlaceObject('barrier1.5x0.2x1m.ply',[-1,-1.2,0]);  % Place fence at desired position
+h_2 = PlaceObject('barrier1.5x0.2x1m.ply',[-1,1.2,0]);  
+h_3 = PlaceObject('barrier1.5x0.2x1m.ply',[-1,-1.2,0]);  
+h_4 = PlaceObject('barrier1.5x0.2x1m.ply',[1,1.2,0]);  
+h_5 = PlaceObject('barrier1.5x0.2x1m.ply',[1,-1.2,0]);  
 
-h_4 = PlaceObject('barrier1.5x0.2x1m.ply',[1,1.2,0]);  % Place fence at desired position
-h_5 = PlaceObject('barrier1.5x0.2x1m.ply',[1,-1.2,0]);  % Place fence at desired position
-
-
-
-%% safety items
+% Additional safety items
 ES =  PlaceObject('emergencyStopButton.ply', [1.8,-1.9,0])* trotx(-pi/2);
 FE = PlaceObject('fireExtinguisherElevated.ply', [1,-1.7,0.5]); 
 man =  PlaceObject('personMaleConstruction.ply', [-1,-2,0]);
 wall = PlaceObject('fenceAssemblyGreenRectangle4x8x2.5m.ply', [0,7.5,-1]);
 
-
-
-
-
-
 %% Plot Initial Robot Configurations
 omronRobot.PlotAndColourRobot();
 
-
+%% Continue with the rest of the existing logic...
 %% Calculate Target Pose and Perform IK for Omron Robot
 targetPose = transl(1.1, -0.4, 0.2);  % Adjusted ball position
 qCurrent = omronRobot.model.getpos();
