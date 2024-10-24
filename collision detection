@@ -1,0 +1,168 @@
+%% Initialize Environment, UR5, and Omron Robots
+clear; clc; close all;
+
+% Initialize UR5 robot at the origin with base transformation
+ur5BaseTr = transl(0.5, 0.5, 0);  % Base at origin
+ur5Robot = LinearUR5(ur5BaseTr);  % Create instance of the LinearUR5 robot
+
+% Initialize Omron robot at a shifted location
+omronBaseTr = transl(1, 0, 0.5);  % Omron shifted along X-axis
+omronRobot = Omron(omronBaseTr);  % Create instance of the Omron robot
+
+%% Set the Desired Starting Position for the UR5 Robot
+initialJointAnglesUR5 = [0, 0, -pi/2, 0, pi/2, pi/2, pi/2, pi];  % 8 joint values
+
+% Plot the UR5 robot in the initial position
+ur5Robot.model.plot(initialJointAnglesUR5);
+
+%% Load and Plot the Ball (STL file)
+ballPosition = transl(1.2, -0.5, 0.1);  % Ball initial position
+ball = stlread('BasketTopu.stl');  % Load STL file
+ballVertices = ball.Points * 0.0008;  % Scale vertices
+ballFaces = ball.ConnectivityList;
+
+% Plot the ball in the scene
+hold on;
+ballHandle = patch('Faces', ballFaces, 'Vertices', ballVertices + ballPosition(1:3, 4)', ...
+    'FaceVertexCData', repmat([0.8, 0.3, 0.3], size(ballVertices, 1), 1), ...
+    'FaceColor', 'flat', 'EdgeColor', 'none');
+
+% Load and Plot the Basket (STL file)
+basketPosition = transl(0, 4, 0.0);  % Set the position for the basket
+basket = stlread('basket.stl');  % Load STL file for the basket
+basketVertices = basket.Points * 0.001;  % Scale down if necessary
+basketFaces = basket.ConnectivityList;
+
+% Plot the basket in the scene
+hold on;
+basketHandle = patch('Faces', basketFaces, 'Vertices', basketVertices + basketPosition(1:3, 4)', ...
+    'FaceVertexCData', repmat([0.7, 0.7, 0.7], size(basketVertices, 1), 1), ...
+    'FaceColor', 'flat', 'EdgeColor', 'none');
+
+%% Set up Floor Texture and Environment
+[X, Y] = meshgrid(-5:0.1:5, -5:0.1:5);
+Z = zeros(size(X));
+floorTexture = imread('concrete.jpg');  
+surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'none');
+axis([-5 5 -5 5 0 5]);  
+view(3);
+
+%% Fencing 
+t = hgtransform;
+h_1 = PlaceObject('barrier1.5x0.2x1m.ply',[0,1.5,0]);  % Place fence at desired position
+set(h_1, 'Parent', t);
+rotationAngle = pi/2;  % Example:  90degrees, modify this to align with your yellow line
+rotationMatrix = makehgtform('zrotate', rotationAngle);
+set(t, 'Matrix', rotationMatrix);
+h_1 = PlaceObject('barrier1.5x0.2x1m.ply',[0,-2,0]);  % Place fence at desired position
+set(h_1, 'Parent', t);
+rotationAngle = pi/2;  % Example:  90degrees, modify this to align with your yellow line
+rotationMatrix = makehgtform('zrotate', rotationAngle);
+set(t, 'Matrix', rotationMatrix);
+h_2 = PlaceObject('barrier1.5x0.2x1m.ply',[-1,1.2,0]);  % Place fence at desired position
+h_3 = PlaceObject('barrier1.5x0.2x1m.ply',[-1,-1.2,0]);  % Place fence at desired position
+
+h_4 = PlaceObject('barrier1.5x0.2x1m.ply',[1,1.2,0]);  % Place fence at desired position
+h_5 = PlaceObject('barrier1.5x0.2x1m.ply',[1,-1.2,0]);  % Place fence at desired position
+
+%% Safety Items
+ES =  PlaceObject('emergencyStopButton.ply', [1.8,-1.9,0])* trotx(-pi/2);
+FE = PlaceObject('fireExtinguisherElevated.ply', [1,-1.7,0.5]); 
+hMan =  PlaceObject('personMaleConstruction.ply', [-1,-2,0]);  % Place the man in the scene
+manVertices = get(hMan, 'Vertices');  % Get the vertices of the man object
+wall = PlaceObject('fenceAssemblyGreenRectangle4x8x2.5m.ply', [0,7.5,-1]);
+
+%% Global Variables to Manage Emergency Stop
+global emergencyStopActivated;
+global manPosition;
+global stopSimulation;
+manPosition = [-1, -2, 0];  % Initial position of the man
+emergencyStopActivated = false;
+stopSimulation = false;
+
+%% Emergency Stop Function
+function stopEverything()
+    global emergencyStopActivated;
+    global stopSimulation;
+    
+    emergencyStopActivated = true;  % Trigger emergency stop
+    stopSimulation = true;  % Stop everything
+
+    disp('Emergency Stop Activated. Simulation halted.');
+end
+
+%% Simulate Man's Movement Towards the Fence
+% Number of steps for the man to reach the fence
+manSteps = 50;  
+manTrajectory = jtraj([-1, -2, 0], [0, 1.5, 0], manSteps);  % Trajectory for the man moving towards the fence
+
+for i = 1:manSteps
+    if stopSimulation  % Check if the simulation should stop
+        break;
+    end
+    
+    % Calculate the translation for the current step
+    translation = manTrajectory(i, :) - manTrajectory(1, :);
+    
+    % Check if the man is about to collide with the fence
+    nextManPosition = manPosition + translation;
+    if isCollisionWithFence(nextManPosition, [0, 1.5, 0], [1.5, 0.2, 1])
+        disp('Collision Detected: Man touched the fence!');
+        stopEverything();  % Trigger emergency stop
+        break;
+    end
+    
+    % Update the man's vertices to move him closer to the fence
+    newVertices = manVertices + repmat(translation, size(manVertices, 1), 1);
+    set(hMan, 'Vertices', newVertices);  % Update in the scene
+    
+    % Update the man's position
+    manPosition = nextManPosition;
+    
+    pause(0.6);  % Control the speed of the man's movement
+end
+
+%% Robot Movements
+% Simulating Omron and UR5 Robot Movements
+% These loops will break immediately when stopSimulation becomes true
+
+% Omron Robot Movement
+targetPose = transl(1.1, -0.4, 0.2);  % Target pose
+q0 = zeros(1, omronRobot.model.n);  % Initial joint configuration
+targetJointAngles = omronRobot.model.ikcon(targetPose, q0);
+steps = 50;
+trajectory = jtraj(omronRobot.model.getpos(), targetJointAngles, steps);
+
+for i = 1:steps
+    if stopSimulation  % Stop if emergency stop is triggered
+        disp('Omron robot stopped due to emergency stop.');
+        break;
+    end
+    omronRobot.model.animate(trajectory(i, :));  % Animate Omron
+    pause(0.05);
+end
+
+% UR5 Robot Movement
+initialAngles = [0, 0, -pi/2, 0, pi/2, pi/2, pi/2, pi];  % Start pose
+finalAngles = [0, 0, -pi/9, 0, pi/2, pi/2, pi/2, pi];    % End pose
+ur5Trajectory = jtraj(initialAngles, finalAngles, 100);
+
+for i = 1:100
+    if stopSimulation  % Stop if emergency stop is triggered
+        disp('UR5 robot stopped due to emergency stop.');
+        break;
+    end
+    ur5Robot.model.animate(ur5Trajectory(i, :));  % Animate UR5
+    pause(0.05);
+end
+
+%% Collision Detection Function
+function isCollision = isCollisionWithFence(manPos, fencePos, fenceSize)
+    % Check if the man is within the bounding box of the fence
+    isCollision = manPos(1) >= (fencePos(1) - fenceSize(1)/2) && ...
+                  manPos(1) <= (fencePos(1) + fenceSize(1)/2) && ...
+                  manPos(2) >= (fencePos(2) - fenceSize(2)/2) && ...
+                  manPos(2) <= (fencePos(2) + fenceSize(2)/2);
+end
+
+disp('Simulation complete.');
