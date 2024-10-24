@@ -1,0 +1,26 @@
+classdef LinearUR5_GUI < handle
+    properties
+        robotModel;  % The robot model (instance of LinearUR5)
+    end
+
+    methods
+        % Constructor to initialize the GUI and load the robot model
+        function self = LinearUR5_GUI()
+            baseTransform = eye(4); % Define any specific base transform if needed
+            self.robotModel = LinearUR5(baseTransform); % Create the LinearUR5 model
+            
+            % Plot the robot in its initial position
+            q0 = zeros(1,8);  % Initial joint configuration (all zeros)
+            self.robotModel.model.plot(q0, 'nojoints'); % Adjust the number of zeros to match the number of links
+            
+            % Add the teach GUI
+            self.CreateTeachGUI();
+        end
+        
+        % Function to create a teach GUI for the robot
+        function CreateTeachGUI(self)
+            % Use the built-in teach function to create a GUI
+            self.robotModel.model.teach();
+        end
+    end
+end
