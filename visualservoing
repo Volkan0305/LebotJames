@@ -6,47 +6,52 @@ ur5BaseTr = transl(0.5, 0.5, 0);  % Base at origin
 ur5Robot = LinearUR5(ur5BaseTr);  % Create instance of the LinearUR5 robot
 
 % Initialize Omron robot at a shifted location
-omronBaseTr = transl(0, 0, 0.4);  % Omron shifted along X-axis
+omronBaseTr = transl(1, 0, 0.5);  % Omron shifted along X-axis
 omronRobot = Omron(omronBaseTr);  % Create instance of the Omron robot
 
-%% Add Cameras for Visual Servoing
+% Set Desired Starting Position for the UR5 Robot
+initialJointAnglesUR5 = [0, 0, -pi/2, 0, pi/2, pi/2, pi/2, pi];  % 8 joint values
+ur5Robot.model.plot(initialJointAnglesUR5);
+
+% Initialize Cameras
 ur5Camera = CentralCamera('focal', 0.08, 'pixel', 10e-5, 'resolution', [1024 1024], 'centre', [512 512], 'name', 'UR5_Camera');
 omronCamera = CentralCamera('focal', 0.08, 'pixel', 10e-5, 'resolution', [1024 1024], 'centre', [512 512], 'name', 'Omron_Camera');
 
 %% Collision Avoidance Parameters
-collisionThreshold = 1.5;  % Distance threshold for initiating evasion
+collisionThreshold = 1;  % Distance threshold for initiating evasion
 evasionDistance = 0.2;  % Distance the robot moves away during evasion
-lambda = 0.8;  % Gain for visual servoing
 
-%% Create and Plot the Cube (Foreign Object)
+%% Cube and Simulation Setup
 cubeSize = 0.2;  % Size of the cube edge
-cubePosition = transl(0, 1, 1.0);  % Adjusted initial cube position closer to the robots
+fps = 25;
+timeSteps = 150;
 
-% Define vertices for a cube centered at the origin, then scale and translate
-cubeVertices = cubeSize * [-0.5 -0.5 -0.5; 0.5 -0.5 -0.5; 0.5 0.5 -0.5; -0.5 0.5 -0.5; ...
-                           -0.5 -0.5 0.5; 0.5 -0.5 0.5; 0.5 0.5 0.5; -0.5 0.5 0.5];
-cubeVertices = cubeVertices + cubePosition(1:3, 4)';  % Position cube in the workspace
+% Data collection arrays
+ur5Distances = zeros(1, timeSteps);
+omronDistances = zeros(1, timeSteps);
+ur5Evasion = zeros(1, timeSteps);
+omronEvasion = zeros(1, timeSteps);
 
-% Define faces of the cube using vertices
-cubeFaces = [1 2 3 4; 5 6 7 8; 1 5 8 4; 2 6 7 3; 1 2 6 5; 4 3 7 8];
+% Cube initial position
+cubeVertices = cubeSize * [-0.5 -0.5 -0.5; 0.5 -0.5 -0.5; 0.5 0.5 -0.5; -0.5 0.5 -0.5; -0.5 -0.5 0.5; 0.5 -0.5 0.5; 0.5 0.5 0.5; -0.5 0.5 0.5];
+cubePosition = transl(0, 1, 1.0);  % Starting position
+cubeVertices = cubeVertices + cubePosition(1:3, 4)';
 
-% Plot the cube
+% Plot cube
 hold on;
-cubeHandle = patch('Vertices', cubeVertices, 'Faces', cubeFaces, ...
-    'FaceColor', [0.2, 0.6, 0.8], 'EdgeColor', 'none');  % Color it as a "foreign" object
+cubeHandle = patch('Vertices', cubeVertices, 'Faces', [1 2 3 4; 5 6 7 8; 1 5 8 4; 2 6 7 3; 1 2 6 5; 4 3 7 8], 'FaceColor', [0.2, 0.6, 0.8], 'EdgeColor', 'none');
 
 % Set larger workspace for better visibility
 axis([-4 4 -4 4 0 3]); % Expanded workspace boundaries
 view(3); % Set the 3D view
 
-%% Setup Simulation Loop
-fps = 25;
-timeSteps = 150;
-avoidanceActivated = false;
-
+%% Simulation Loop
 for t = 1:timeSteps
-    % Cube trajectory (moving towards the robots)
-    cubePosition = transl(2 - t * 0.005, 1 - t * 0.005, 1.0 - t * 0.003);  % Moving toward the robots diagonally and downwards
+    % Faster cube trajectory with back-and-forth movement
+    xPosition = 1.5 - t * 0.02 + 0.4 * sin(0.1 * t);  % Increase speed
+    yPosition = 0.7 - t * 0.02 + 0.4 * sin(0.1 * t + pi / 2);  % Increase speed
+    zPosition = 0.8 - t * 0.008;  % Faster descent
+    cubePosition = transl(xPosition, yPosition, zPosition);
     updatedVertices = (cubePosition(1:3, 1:3) * cubeVertices')' + cubePosition(1:3, 4)';
     set(cubeHandle, 'Vertices', updatedVertices);
 
@@ -56,63 +61,72 @@ for t = 1:timeSteps
     ur5Dist = norm(ur5Pose.t - cubePosition(1:3, 4));
     omronDist = norm(omronPose.t - cubePosition(1:3, 4));
 
-    fprintf('Time step %d: UR5 distance = %.3f, Omron distance = %.3f\n', t, ur5Dist, omronDist);
+    % Log data
+    ur5Distances(t) = ur5Dist;
+    omronDistances(t) = omronDist;
+
+    % Print distances to the terminal
+    fprintf('Time Step %d: UR5 Distance = %.2f, Omron Distance = %.2f\n', t, ur5Dist, omronDist);
 
     %% UR5 Collision Avoidance
     if ur5Dist < collisionThreshold
-        disp('UR5 avoiding collision.');
-        
-        % Calculate avoidance direction (away from cube)
-        avoidanceDirection = (ur5Pose.t - cubePosition(1:3, 4)) / norm(ur5Pose.t - cubePosition(1:3, 4)) * evasionDistance;
-        targetPosition = ur5Pose.t + avoidanceDirection;  % Add evasion offset
-        targetPose = transl(targetPosition);  % Define target as translation only
-        
-        % Inverse Kinematics to calculate new joint angles for evasion
+        ur5Evasion(t) = 1;  % Log evasion
+        avoidanceDirection = (ur5Pose.t - cubePosition(1:3, 4)) / ur5Dist * evasionDistance;
+        targetPosition = ur5Pose.t + avoidanceDirection;
+        targetPose = transl(targetPosition);
         qCurrent = ur5Robot.model.getpos();
         targetJointAngles = ur5Robot.model.ikcon(targetPose, qCurrent);
         
-        % Animate evasion with error handling for UR5
-        try
-            trajectory = jtraj(qCurrent, targetJointAngles, fps);
-            for i = 1:fps
-                ur5Robot.model.animate(trajectory(i, :));
-                drawnow;
-            end
-        catch err
-            fprintf('Error in UR5 animation: %s\n', err.message);
+        trajectory = jtraj(qCurrent, targetJointAngles, fps);
+        for i = 1:fps
+            ur5Robot.model.animate(trajectory(i, :));
+            drawnow;
         end
-        avoidanceActivated = true;
     end
 
     %% Omron Collision Avoidance
     if omronDist < collisionThreshold
-        disp('Omron avoiding collision.');
-        
-        % Calculate avoidance direction (away from cube)
-        avoidanceDirection = (omronPose.t - cubePosition(1:3, 4)) / norm(omronPose.t - cubePosition(1:3, 4)) * evasionDistance;
-        targetPosition = omronPose.t + avoidanceDirection;  % Add evasion offset
-        targetPose = transl(targetPosition);  % Define target as translation only
-        
-        % Inverse Kinematics to calculate new joint angles for evasion
+        omronEvasion(t) = 1;  % Log evasion
+        avoidanceDirection = (omronPose.t - cubePosition(1:3, 4)) / omronDist * evasionDistance;
+        targetPosition = omronPose.t + avoidanceDirection;
+        targetPose = transl(targetPosition);
         qCurrent = omronRobot.model.getpos();
         targetJointAngles = omronRobot.model.ikcon(targetPose, qCurrent);
         
-        % Animate evasion with error handling for Omron
-        try
-            trajectory = jtraj(qCurrent, targetJointAngles, fps);
-            for i = 1:fps
-                omronRobot.model.animate(trajectory(i, :));
-                drawnow;
-            end
-        catch err
-            fprintf('Error in Omron animation: %s\n', err.message);
+        trajectory = jtraj(qCurrent, targetJointAngles, fps);
+        for i = 1:fps
+            omronRobot.model.animate(trajectory(i, :));
+            drawnow;
         end
-        avoidanceActivated = true;
     end
-
-    % Reset avoidanceActivated flag after each iteration
-    avoidanceActivated = false;
-
+    
     % Pause for the simulation loop
     pause(0.04);
 end
+
+%% Plotting Visual Servoing Data
+figure;
+subplot(3,1,1);
+plot(1:timeSteps, ur5Distances, 'b', 'DisplayName', 'UR5 Distance to Cube');
+hold on;
+plot(1:timeSteps, omronDistances, 'r', 'DisplayName', 'Omron Distance to Cube');
+ylabel('Distance (m)');
+title('Distance to Cube Over Time');
+legend;
+
+subplot(3,1,2);
+plot(1:timeSteps, ur5Evasion, 'b', 'DisplayName', 'UR5 Evasion');
+hold on;
+plot(1:timeSteps, omronEvasion, 'r', 'DisplayName', 'Omron Evasion');
+ylabel('Evasion Status');
+title('Evasion Activation Over Time');
+legend;
+
+subplot(3,1,3);
+plot(1:timeSteps, ur5Distances - collisionThreshold, 'g', 'DisplayName', 'UR5 Distance Error');
+hold on;
+plot(1:timeSteps, omronDistances - collisionThreshold, 'm', 'DisplayName', 'Omron Distance Error');
+ylabel('Distance Error (m)');
+xlabel('Time Steps');
+title('Error from Collision Threshold');
+legend;
