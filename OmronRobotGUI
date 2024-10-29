@@ -2,13 +2,17 @@ function OmronRobotGUI
     % Create a new figure for the GUI
     fig = uifigure('Name', 'Omron Robot Control Panel', 'Position', [100 100 800 600]);
 
-    % Initialize the Omron robot model
-    baseTr = eye(4);  % Identity matrix for base transformation
-    robot = Omron(baseTr);
+    % Set base position for Omron robot at (1, 0, 0.5)
+    baseTr = eye(4);  % Initialize base transformation matrix as identity
+    baseTr(1:3, 4) = [1; 0; 0.5];  % Set translation part to [1, 0, 0.5]
+    robot = Omron(baseTr);  % Initialize the Omron robot with the new base position
 
     % Variables to control the robot animation
     isRunning = false;  % Flag for running animation
     t = timer('ExecutionMode', 'fixedRate', 'Period', 0.05, 'TimerFcn', @animateRobot);
+
+    % ... (rest of your existing code remains the same)
+
 
     % Create a slider for each joint of the robot
     sliders = gobjects(1, robot.model.n);  % Pre-allocate sliders array
@@ -101,6 +105,6 @@ function OmronRobotGUI
     end
 
     % Initial plot of the robot in the home position
-    robot.model.plot(currentJointAngles, 'workspace', [-1 1 -1 1 -1 1]);
+    robot.model.plot(currentJointAngles, 'workspace', [-2 2 -2 2 -2 2]);
 
 end
