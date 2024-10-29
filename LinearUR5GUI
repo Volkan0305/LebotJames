@@ -1,12 +1,16 @@
-classdef LinearUR5_GUI < handle
+classdef LinearUR5GUI < handle
     properties
         robotModel;  % The robot model (instance of LinearUR5)
     end
 
     methods
         % Constructor to initialize the GUI and load the robot model
-        function self = LinearUR5_GUI()
-            baseTransform = eye(4); % Define any specific base transform if needed
+        function self = LinearUR5GUI()
+            % Define the base transform to position the robot at (0.5, 0.5, 0)
+            baseTransform = eye(4);
+            baseTransform(1,4) = 0.5; % x position
+            baseTransform(2,4) = 0.5; % y position
+            
             self.robotModel = LinearUR5(baseTransform); % Create the LinearUR5 model
             
             % Plot the robot in its initial position
