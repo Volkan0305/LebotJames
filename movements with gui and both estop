@@ -9,6 +9,7 @@ isStopped = false;     % Tracks if the simulation is paused
 isDisengaged = false;  % Tracks if the E-Stop has been disengaged
 
 OmronRobotGUI();
+LinearUR5GUI();
 
 % Initialize UR5 and Omron Robots
 ur5BaseTr = transl(0.5, 0.5, 0);  
@@ -16,16 +17,24 @@ ur5Robot = LinearUR5(ur5BaseTr);
 omronBaseTr = transl(1, 0, 0.5);  
 omronRobot = Omron(omronBaseTr);  
 
-% GUI Panel
+% GUI Panel with Centralized Buttons and Status Indicators
 fig = uifigure('Name', 'Robot Control Panel', 'Position', [100, 100, 800, 700]);
 
-% Emergency Stop Button
-emergencyButton = uibutton(fig, 'push', 'Text', 'E-Stop', 'Position', [200, 100, 100, 50], ...
+% Centralize the E-Stop Button
+emergencyButton = uibutton(fig, 'push', 'Text', 'E-Stop', 'Position', [300, 300, 100, 50], ...
     'ButtonPushedFcn', @(~, ~) emergencyButtonHandler());
 
-% Go Button
-goButton = uibutton(fig, 'push', 'Text', 'Go', 'Position', [500, 100, 100, 50], ...
+% E-Stop Indicator Light (Red when active)
+eStopLight = uilabel(fig, 'Position', [275, 320, 20, 20], 'BackgroundColor', 'red');
+eStopLight.Visible = 'off';  % Initially off
+
+% Centralize the Go Button
+goButton = uibutton(fig, 'push', 'Text', 'Go', 'Position', [400, 300, 100, 50], ...
     'ButtonPushedFcn', @(~, ~) continueSimulation());
+
+% Continue Indicator Light (Green when active)
+goLight = uilabel(fig, 'Position', [505, 320, 20, 20], 'BackgroundColor', 'green');
+goLight.Visible = 'off';  % Initially off
 
 % Start the pushbutton handler in a background task
 t = timer('ExecutionMode', 'fixedRate', 'Period', 0.1, 'TimerFcn', @(~, ~) arduinoButtonHandler(arduinoObj, buttonPin));
@@ -68,6 +77,8 @@ function emergencyStop()
     disp('Emergency Stop Activated! Simulation Paused.');
     isStopped = true;
     isDisengaged = false;  % Ensure it's not disengaged yet
+    eStopLight.Visible = 'on';  % Turn on the red light
+    goLight.Visible = 'off';    % Turn off the green light
 end
 
 %% Function to Disengage E-Stop (Remain Paused)
@@ -75,6 +86,7 @@ function disengageEStop()
     global isDisengaged;
     disp('E-Stop Disengaged, but Simulation is still Paused.');
     isDisengaged = true;
+    eStopLight.Visible = 'off';  % Turn off the red light
 end
 
 %% Function to Continue Simulation (Resume after Pause)
@@ -83,8 +95,11 @@ function continueSimulation()
     disp('Continuing Simulation...');
     isStopped = false;
     isDisengaged = false;
+    eStopLight.Visible = 'off';  % Turn off the red light
+    goLight.Visible = 'on';      % Turn on the green light
 end
 
+%% Rest of the code remains the same...
 %% Update Omron Robot Joint Angles
 function updateOmronJoint(jointIndex, jointValue)
     global isStopped;
@@ -126,7 +141,7 @@ ballHandle = patch('Faces', ballFaces, 'Vertices', ballVertices + ballPosition(1
     'FaceColor', 'flat', 'EdgeColor', 'none');
 
 % Load and Plot the Basket (STL file)
-basketPosition = transl(0, 4, 0.0);  % Set the position for the basket
+basketPosition = transl(0, 3.9, 0.0);  % Set the position for the basket
 basket = stlread('basket.stl');  % Load STL file for the basket
 basketVertices = basket.Points * 0.001;  % Scale down if necessary
 basketFaces = basket.ConnectivityList;
@@ -137,10 +152,11 @@ basketHandle = patch('Faces', basketFaces, 'Vertices', basketVertices + basketPo
     'FaceVertexCData', repmat([0.7, 0.7, 0.7], size(basketVertices, 1), 1), ...  % Set a gray color for the basket
     'FaceColor', 'flat', 'EdgeColor', 'none');
 
+
 %% Set up Floor Texture and Environment
 [X, Y] = meshgrid(-5:0.1:5, -5:0.1:5);
 Z = zeros(size(X));
-floorTexture = imread('concrete.jpg');  
+floorTexture = imread('lakers1.jpg');  
 surf(X, Y, Z, 'CData', floorTexture, 'FaceColor', 'texturemap', 'EdgeColor', 'none');
 axis([-5 5 -5 5 0 5]);  
 view(3);
